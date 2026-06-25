@@ -52,17 +52,19 @@ def openstd_parse_meta(html_text: str) -> StdMetaFull:
 def openstd_parse_search_result(html_text: str) -> StdSearchResult:
     items = []
     html = BeautifulSoup(html_text, "lxml")
-    table = html.select("table.result_list>tbody:nth-of-type(2)>tr")
+    table = html.select("table.result_list>tbody>tr")
     for row in table:
-        pub_date = (row.select_one("td:nth-of-type(7)").string or "").strip()
-        impl_date = (row.select_one("td:nth-of-type(8)").string or "").strip()
+        if row.find("th"):
+            continue  # skip header row
+        pub_date = (row.select_one("td:nth-of-type(8)").string or "").strip()
+        impl_date = (row.select_one("td:nth-of-type(9)").string or "").strip()
         items.append(
             StdListItem(
                 id=row.select_one("td:nth-of-type(2)>a")["onclick"][10:-3],
                 std_code=row.select_one("td:nth-of-type(2)>a").string.strip(),
-                is_ref=row.select_one("td:nth-of-type(3)>span") is not None,
-                name_cn=row.select_one("td:nth-of-type(4)>a").string.strip(),
-                status=StdStatus(name2std_status(row.select_one("td:nth-of-type(6)>span").string.strip())),
+                is_ref=row.select_one("td:nth-of-type(4)>span") is not None,
+                name_cn=row.select_one("td:nth-of-type(5)>a").string.strip(),
+                status=StdStatus(name2std_status(row.select_one("td:nth-of-type(7)>span").string.strip())),
                 pub_date=date.fromisoformat(pub_date) if pub_date else None,
                 impl_date=date.fromisoformat(impl_date) if impl_date else None,
             )

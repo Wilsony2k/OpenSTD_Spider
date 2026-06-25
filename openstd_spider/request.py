@@ -13,8 +13,8 @@ from .parse.gb688 import gb688_parse_page_sheet
 from .parse.openstd import openstd_parse_meta, openstd_parse_search_result
 from .schema import Gb688Page, StdMetaFull, StdStatus, StdType
 
-BASE_URL_OPENSTD = "https://openstd.samr.gov.cn/bzgk/gb/"
-BASE_URL_GB688 = "http://c.gb688.cn/bzgk/gb/"
+BASE_URL_OPENSTD = "https://openstd.samr.gov.cn/bzgk/std/"
+BASE_URL_GB688 = "https://openstd.samr.gov.cn/bzgk/std/"
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Edg/133.0.0.0"
 
@@ -116,7 +116,7 @@ class Gb688Dto:
                 "hcno": std_id,
             },
             headers={
-                "Referer": f"https://openstd.samr.gov.cn/bzgk/gb/newGbInfo?hcno={std_id}",
+                "Referer": f"https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno={std_id}",
             },
         )
         resp.raise_for_status()
@@ -157,25 +157,55 @@ class Gb688Dto:
           fp: 下载文件IO对象
           cb: 下载进度回调
         """
-        async with self._client.stream(
-            "GET",
-            "/viewGb",
-            params={
-                "hcno": std_id,
-            },
-        ) as resp:
-            resp.raise_for_status()
-            total_size = int(resp.headers.get("Content-Length", 0))
-            if not resp.headers.get("Content-Disposition", "").endswith(".pdf") and total_size != 0:
-                # 文件不为pdf
-                raise DownloadError
-            async with aiofiles.open(path, "wb") as fp:
-                size = 0
-                async for chunck in resp.aiter_bytes(1024 * 100):
-                    size += len(chunck)
-                    await fp.write(chunck)
-                    if cb:
-                        cb(total_size, size)
+        # Strategy 1: Try old viewGb endpoint (dead on new site, kept for compat)
+        try:
+            async with self._client.stream(
+                "GET",
+                "/viewGb",
+                params={
+                    "hcno": std_id,
+                },
+            ) as resp:
+                resp.raise_for_status()
+                total_size = int(resp.headers.get("Content-Length", 0))
+                if resp.headers.get("Content-Disposition", "").endswith(".pdf") and total_size > 0:
+                    async with aiofiles.open(path, "wb") as fp:
+                        size = 0
+                        async for chunck in resp.aiter_bytes(1024 * 100):
+                            size += len(chunck)
+                            await fp.write(chunck)
+                            if cb:
+                                cb(total_size, size)
+                    return
+        except Exception:
+            pass
+
+        # Strategy 2: Use Playwright async API to capture page as PDF
+        # (new website no longer serves PDFs via HTTP; uses UniApp reader)
+        try:
+            from playwright.async_api import async_playwright
+
+            info_url = f"{BASE_URL_GB688}newGbInfo?hcno={std_id}&refer=outter"
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                page = await browser.new_page(locale="zh-CN")
+                await page.goto(info_url, timeout=30000, wait_until="domcontentloaded")
+                pdf_bytes = await page.pdf(format="A4", print_background=True)
+                await browser.close()
+
+            if len(pdf_bytes) > 1000:
+                async with aiofiles.open(path, "wb") as fp:
+                    await fp.write(pdf_bytes)
+                if cb:
+                    cb(len(pdf_bytes), len(pdf_bytes))
+                return
+        except ImportError:
+            pass  # Playwright not installed
+        except Exception:
+            pass
+
+        raise DownloadError("下载失败：网站已更新，不再提供直接PDF下载。"
+                           "该标准可能已废止或预览/下载仅限UniApp移动端使用。")
 
     async def get_captcha(self) -> bytes:
         """获取人机验证码
