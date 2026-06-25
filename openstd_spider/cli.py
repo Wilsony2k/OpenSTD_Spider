@@ -347,11 +347,12 @@ async def download(
         download_path /= meta.std_code.replace("/", "") + ".pdf"
 
     if meta.allow_download and not force_preview:
-        # 文件下载
+        # 文件下载（含 Playwright page.pdf() fallback）
         await download_file(std_id, download_path)
     elif meta.allow_preview:
-        # 预览下载
-        console.print(f"[yellow]! [bold yellow]不允许直接下载, 进行预览方式合并重组下载")
-        await download_preview(std_id, download_path)
+        # 预览下载（新网站已移除 viewGbImg API）
+        # 改用 Playwright page.pdf() 捕获元数据页
+        console.print(f"[yellow]! 禁止直接PDF下载, 使用元数据页PDF (Playwright)"  )
+        await download_file(std_id, download_path)
 
     console.print(f"[green]✔ [bold green]下载完成")
