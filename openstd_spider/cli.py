@@ -177,6 +177,8 @@ def show_std_meta(meta: StdMetaFull, detail: bool = True):
         tb2.add_row("[bold white]归口部门", meta.centralized_depat)
         tb2.add_row("[bold white]发布单位", meta.pub_depat)
         tb2.add_row("[bold white]备注", meta.comment)
+        if meta.adoption_relation:
+            tb2.add_row("[bold yellow]采标关系", meta.adoption_relation)
         tb2.columns[1].overflow = "fold"
         grid.add_row(tb2)
 
@@ -302,6 +304,21 @@ async def meta_info(
     except NotFoundError:
         console.print(f"❌[red]目标资源id不存在")
         sys.exit(-1)
+
+    # If the standard is an adoption (采), try to fetch adoption relation
+    # from std.samr.gov.cn which has more complete info
+    if meta.is_ref:
+        try:
+            from openstd_spider.request import SamrPortalDto
+            adoption = await asyncio.wait_for(
+                SamrPortalDto.get_adoption_relation(meta.std_code),
+                timeout=35,
+            )
+            if adoption:
+                meta.adoption_relation = adoption
+        except (asyncio.TimeoutError, Exception):
+            pass
+
     if json_output:
         sys.stdout.write(meta.to_json(ensure_ascii=False, separators=(",", ":")))
     else:

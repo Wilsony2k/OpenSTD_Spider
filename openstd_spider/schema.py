@@ -59,6 +59,7 @@ class StdMetaFull(StdMeta):
     centralized_depat: str
     pub_depat: str
     comment: str
+    adoption_relation: str | None = None
 
 
 @dataclass

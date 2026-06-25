@@ -13,11 +13,11 @@ def openstd_parse_meta(html_text: str) -> StdMetaFull:
     tag2 = tag1.select_one("table.tdlist")
     tag3 = tag1.select("div[clsss='row'],[clsss='row detail']")
 
-    std_code = list(tag1.select_one("table.mk1 tr td h1").strings)
-    if std_code[0].startswith("您所查询的标准系统尚未收录"):
+    h1_strings = list(tag1.select_one("table.mk1 tr td h1").strings)
+    if h1_strings[0].startswith("您所查询的标准系统尚未收录"):
         raise NotFoundError
-    is_ref = std_code[-1] == "采"
-    _, std_code = std_code[0].split("标准号：")
+    is_ref = len(h1_strings) >= 2 and h1_strings[1] == "采"
+    _, std_code = h1_strings[0].split("标准号：")
     std_code = std_code.strip()
 
     if tag_pub_date := tag3[1].find(string=lambda x: "发布日期" in x):
@@ -45,7 +45,7 @@ def openstd_parse_meta(html_text: str) -> StdMetaFull:
         maintenance_depat=tag3[2].find(string=lambda x: "主管部门" in x).find_next().string.strip(),
         centralized_depat=tag3[2].find(string=lambda x: "归口部门" in x).find_next().string.strip(),
         pub_depat=tag3[3].find(string=lambda x: "发布单位" in x).find_next().string.strip(),
-        comment=tag3[4].find(string=lambda x: "备注" in x).find_next().string.strip(),
+        comment=tag3[4].find(string=lambda x: x and "备注" in x).find_next().get_text(strip=True) or None,
     )
 
 

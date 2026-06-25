@@ -2,6 +2,7 @@ import random
 import time
 from os import PathLike
 from typing import Callable, Optional
+from urllib.parse import quote
 
 import aiofiles
 from httpx import AsyncClient
@@ -232,3 +233,63 @@ class Gb688Dto:
         )
         resp.raise_for_status()
         return resp.text == "success"
+
+
+BASE_URL_SAMR = "https://std.samr.gov.cn"
+SAMR_SEARCH_URL = f"{BASE_URL_SAMR}/search/std?q="
+
+
+class SamrPortalDto:
+    """Scraper for std.samr.gov.cn — SAMR standard portal.
+
+    This site is a UniApp webview wrapper; standard details are JS-rendered.
+    Use Playwright to load the page and extract the '采标关系' field
+    that is NOT available on openstd.samr.gov.cn.
+    """
+
+    @staticmethod
+    async def get_adoption_relation(std_code: str) -> str | None:
+        """Fetch the adoption relation (采标关系) from std.samr.gov.cn.
+
+        Returns a string like '修改  IEC 61133:1992', '等同  ISO 9001:2015',
+        or None if not found / Playwright unavailable / error.
+        """
+        from openstd_spider.parse.samr import extract_details_from_rendered_page
+
+        try:
+            from playwright.async_api import async_playwright
+
+            url = f"{SAMR_SEARCH_URL}{quote(std_code)}"
+            async with async_playwright() as pw:
+                browser = await pw.chromium.launch(headless=True)
+                context = await browser.new_context(locale="zh-CN")
+                page = await context.new_page()
+
+                await page.goto(url, timeout=20000, wait_until="domcontentloaded")
+                # Wait for JS rendering — look for known page elements
+                try:
+                    await page.wait_for_selector(
+                        "div.content, table.tdlist, .main",
+                        timeout=20000,
+                    )
+                except Exception:
+                    pass  # Timed out waiting — try page text anyway
+
+                # Extra wait for dynamic JS rendering
+                await page.wait_for_timeout(3000)
+
+                # Get full page text content
+                page_text = await page.text_content("body")
+                page_text = page_text or ""
+
+                await browser.close()
+
+            details = extract_details_from_rendered_page(page_text)
+            return details.get("adoption_relation")
+
+        except ImportError:
+            pass  # Playwright not installed
+        except Exception:
+            pass  # Playwright error or network timeout
+
+        return None
